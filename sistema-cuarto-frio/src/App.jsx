@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
+const API_URL = 'http://localhost:4000';
 
 export default function App() {
   const [currentView, setCurrentView] = useState('cold-room');
@@ -22,7 +23,7 @@ export default function App() {
     localStorage.setItem('cf_brand_name', newName);
     localStorage.setItem('cf_brand_logo', newLogoBase64);
 
-    fetch('http://localhost:4000/api/settings/brand', {
+    fetch('${API_URL}/api/settings/brand', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ brandName: newName })
@@ -30,7 +31,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetch('http://localhost:4000/api/products')
+    fetch('${API_URL}/api/products')
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setProducts(data);
@@ -43,7 +44,7 @@ export default function App() {
     const loggedIn = localStorage.getItem('cf_admin_logged') === 'true';
     if (loggedIn) setIsAuthenticated(true);
 
-    const newSocket = io('http://localhost:4000', {
+    const newSocket = io('${API_URL}', {
       transports: ['websocket', 'polling']
     });
 
@@ -231,7 +232,7 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
   const [searchError, setSearchError] = useState('');
 
   const fetchProductsFromDB = () => {
-    fetch('http://localhost:4000/api/products')
+    fetch('${API_URL}/api/products')
       .then(res => res.json())
       .then(data => { if (Array.isArray(data)) onSaveProducts(data); })
       .catch(err => console.error("Error consultando productos:", err));
@@ -242,7 +243,7 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
   const fetchReport = (dateStr) => {
     if (!dateStr) return;
     setIsLoadingReport(true);
-    fetch(`http://localhost:4000/api/reports/daily?date=${dateStr}`)
+    fetch(`${API_URL}/api/reports/daily?date=${dateStr}`)
       .then(res => res.json())
       .then(data => setReportData({ totalSales: data.totalSales || 0, totalOrders: data.totalOrders || 0, orders: data.orders || [] }))
       .catch(err => setReportData({ totalSales: 0, totalOrders: 0, orders: [] }))
@@ -267,7 +268,7 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
     const cleanId = searchOrderId.trim().replace('#', '');
     if (!cleanId) return;
 
-    fetch(`http://localhost:4000/api/orders/${cleanId}`)
+    fetch(`${API_URL}/api/orders/${cleanId}`)
       .then(res => {
         if (!res.ok) throw new Error("Pedido no encontrado");
         return res.json();
@@ -304,7 +305,7 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
 
     setIsSending(true);
     try {
-      const res = await fetch('http://localhost:4000/api/whatsapp/incoming', {
+      const res = await fetch('${API_URL}/api/whatsapp/incoming', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -331,7 +332,7 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
     if (!name.trim()) return;
 
     try {
-      const res = await fetch('http://localhost:4000/api/products', {
+      const res = await fetch('${API_URL}/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: `p-${Date.now()}`, name: name.trim(), category: category.trim() || 'General', price: parseFloat(price) || 0 })
@@ -344,7 +345,7 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
 
   const handleDeleteProduct = async (id) => {
     try {
-      const res = await fetch(`http://localhost:4000/api/products/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}/api/products/${id}`, { method: 'DELETE' });
       if (res.ok) onSaveProducts(await res.json());
     } catch (err) { alert("Error: " + err.message); }
   };
