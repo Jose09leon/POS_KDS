@@ -36,7 +36,8 @@ const emitNewOrder = (newOrder) => io.emit('new_order', newOrder);
 app.get('/api/settings/brand', async (req, res) => {
   try {
     const brandName = await getBrandName();
-    return res.json({ brandName });
+    const finalBrand = brandName || 'MI EMPRESA';
+    return res.status(200).json({ brandName: finalBrand, name: finalBrand });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -44,9 +45,15 @@ app.get('/api/settings/brand', async (req, res) => {
 
 app.post('/api/settings/brand', async (req, res) => {
   try {
-    const { brandName } = req.body;
-    await setBrandNameInDB(brandName);
-    return res.json({ status: 'success', brandName });
+    const { brandName, name } = req.body;
+    const nameToSave = brandName || name;
+
+    if (!nameToSave) {
+      return res.status(400).json({ error: 'Nombre de marca requerido' });
+    }
+
+    await setBrandNameInDB(nameToSave);
+    return res.status(200).json({ status: 'success', brandName: nameToSave, name: nameToSave });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -56,7 +63,7 @@ app.post('/api/settings/brand', async (req, res) => {
 app.get('/api/orders', async (req, res) => {
   try {
     const orders = await getAllOrdersFromDB();
-    return res.json(orders);
+    return res.status(200).json(Array.isArray(orders) ? orders : []);
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -65,26 +72,21 @@ app.get('/api/orders', async (req, res) => {
 app.get('/api/orders/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(`🔎 Buscando orden en SQLite con ID: ${id}`);
     const order = await getOrderById(id);
-    
     if (!order) {
-      console.log(`❌ Orden #${id} no existe en SQLite.`);
-      return res.status(404).json({ error: 'Pedido no encontrado en la base de datos' });
+      return res.status(404).json({ error: 'Pedido no encontrado' });
     }
-    
-    console.log(`✅ Orden #${id} encontrada exitosamente.`);
-    return res.json(order);
+    return res.status(200).json(order);
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
 });
 
-// Catálogo
+// Catálogo de Productos
 app.get('/api/products', async (req, res) => {
   try {
     const products = await getProducts();
-    return res.json(products);
+    return res.status(200).json(Array.isArray(products) ? products : []);
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -92,11 +94,26 @@ app.get('/api/products', async (req, res) => {
 
 app.post('/api/products', async (req, res) => {
   try {
-    const newProduct = req.body;
-    const updatedProducts = await addProduct(newProduct);
-    io.emit('catalog_updated', updatedProducts);
-    return res.json(updatedProducts);
+    const { name, category, price, id } = req.body;
+
+    if (!name || price === undefined) {
+      return res.status(400).json({ error: 'Nombre y precio son requeridos' });
+    }
+
+    const productData = {
+      id: id || Date.now().toString(),
+      name,
+      category: category || 'General',
+      price: parseFloat(price)
+    };
+
+    const updatedProducts = await addProduct(productData);
+    const resultList = Array.isArray(updatedProducts) ? updatedProducts : await getProducts();
+
+    io.emit('catalog_updated', resultList);
+    return res.status(200).json(resultList);
   } catch (error) {
+    console.error('❌ Error al agregar producto:', error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -105,8 +122,10 @@ app.delete('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const updatedProducts = await deleteProduct(id);
-    io.emit('catalog_updated', updatedProducts);
-    return res.json(updatedProducts);
+    const resultList = Array.isArray(updatedProducts) ? updatedProducts : await getProducts();
+
+    io.emit('catalog_updated', resultList);
+    return res.status(200).json(resultList);
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -117,13 +136,13 @@ app.get('/api/reports/daily', async (req, res) => {
   try {
     const dateQuery = req.query.date || new Date().toISOString().split('T')[0];
     const report = await getSalesReportByDate(dateQuery);
-    return res.json(report);
+    return res.status(200).json(report || { date: dateQuery, totalSales: 0, totalOrders: 0, orders: [] });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
 });
 
-// Endpoint de recepción para pedidos manuales
+// Recepciónd de pedidos (WhatsApp / Manual)
 app.post('/api/whatsapp/incoming', async (req, res) => {
   try {
     const { senderName, messageText, manualOrder } = req.body || {};
@@ -141,7 +160,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
 
       await saveOrder(newOrder);
       emitNewOrder(newOrder);
-      return res.json({ status: 'success', order: newOrder });
+      return res.status(200).json({ status: 'success', order: newOrder });
     }
 
     if (!messageText) return res.status(400).json({ error: 'Falta messageText' });
@@ -151,7 +170,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     const aiResponse = await parseWhatsAppOrder(messageText, currentCatalog, currentBrandName);
 
     if (!aiResponse || !aiResponse.isValidOrder || !aiResponse.items || aiResponse.items.length === 0) {
-      return res.json({ status: 'ignored', botReply: aiResponse?.replyMessage });
+      return res.status(200).json({ status: 'ignored', botReply: aiResponse?.replyMessage });
     }
 
     let orderTotal = 0;
@@ -182,7 +201,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     await saveOrder(newOrder);
     emitNewOrder(newOrder);
 
-    return res.json({ status: 'success', order: newOrder, botReply: aiResponse.replyMessage });
+    return res.status(200).json({ status: 'success', order: newOrder, botReply: aiResponse.replyMessage });
   } catch (err) {
     console.error('❌ Error en Endpoint Entrante:', err);
     return res.status(500).json({ error: err.message });
@@ -191,8 +210,8 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
 
 const PORT = process.env.PORT || 4000;
 
-server.listen(PORT, async () => {
-  console.log(`✅ Servidor API Backend corriendo en http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', async () => {
+  console.log(`✅ Servidor API Backend corriendo en http://0.0.0.0:${PORT}`);
   await initDB();
   connectToWhatsApp(emitNewOrder);
 });
