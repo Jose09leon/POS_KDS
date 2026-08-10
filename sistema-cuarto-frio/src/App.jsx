@@ -53,6 +53,16 @@ export default function App() {
   };
 
   useEffect(() => {
+    // 1. Cargar la marca directamente desde SQLite al cargar cualquier navegador
+    safeFetch(`${API_URL}/api/settings/brand`)
+      .then(data => {
+        if (data && (data.brandName || data.name)) {
+          const val = data.brandName || data.name;
+          setBrandName(val);
+        }
+      })
+      .catch(err => console.error("Error consultando marca del backend:", err));
+
     safeFetch(`${API_URL}/api/products`)
       .then(data => {
         if (Array.isArray(data)) setProducts(data);
@@ -69,9 +79,31 @@ export default function App() {
       transports: ['websocket', 'polling']
     });
 
+    // 2. Escuchar actualización de marca en tiempo real desde otro dispositivo
+    newSocket.on('brand_updated', (data) => {
+      if (data && data.brandName) setBrandName(data.brandName);
+    });
+
+    // 3. Escuchar cambios de estado en tiempo real transmitidos por otros navegadores
+    newSocket.on('order_status_updated', ({ orderId, newStatus }) => {
+      setOrders((prevOrders) => {
+        let updated;
+        if (newStatus === 'Completado') {
+          updated = prevOrders.filter(ord => ord.id !== orderId);
+        } else {
+          updated = prevOrders.map(ord => 
+            ord.id === orderId ? { ...ord, status: newStatus } : ord
+          );
+        }
+        localStorage.setItem('cf_orders', JSON.stringify(updated));
+        return updated;
+      });
+    });
+
     newSocket.on('catalog_updated', (updatedCatalog) => {
       if (Array.isArray(updatedCatalog)) setProducts(updatedCatalog);
     });
+
     newSocket.on('new_order', (incomingOrder) => {
       setOrders((prevOrders) => {
         const updated = [incomingOrder, ...prevOrders];
@@ -90,18 +122,23 @@ export default function App() {
   };
 
   const handleAdvanceStatus = (orderToAdvance) => {
+    let nextStatus = '';
+
     if (orderToAdvance.status === 'Nuevo') {
-      const updated = orders.map(ord => 
-        ord.id === orderToAdvance.id ? { ...ord, status: 'En Preparación' } : ord
-      );
-      saveOrders(updated);
+      nextStatus = 'En Preparación';
     } else if (orderToAdvance.status === 'En Preparación') {
-      const updated = orders.filter(ord => ord.id !== orderToAdvance.id);
-      saveOrders(updated);
-      
+      nextStatus = 'Completado';
       setTicketToPrint({
         ...orderToAdvance,
         completedAt: new Date().toLocaleString('es-MX')
+      });
+    }
+
+    if (nextStatus && socketInstance) {
+      // Emite el evento a Socket.IO para sincronizar todas las pantallas conectadas
+      socketInstance.emit('update_order_status', {
+        orderId: orderToAdvance.id,
+        newStatus: nextStatus
       });
     }
   };
@@ -411,11 +448,24 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
     }
   };
 
-  const handleSaveBrandSettings = (e) => {
+  const handleSaveBrandSettings = async (e) => {
     e.preventDefault();
-    onSaveBrand(inputBrandName.trim() || 'MI EMPRESA', logoPreview);
-    setBrandSavedMsg('✅ Identidad guardada con éxito.');
-    setTimeout(() => setBrandSavedMsg(''), 3000);
+    const finalName = inputBrandName.trim() || 'MI EMPRESA';
+    
+    onSaveBrand(finalName, logoPreview);
+
+    try {
+      await safeFetch(`${API_URL}/api/settings/brand`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandName: finalName, name: finalName })
+      });
+      setBrandSavedMsg('✅ Identidad guardada en SQLite con éxito.');
+    } catch (err) {
+      setBrandSavedMsg(`❌ Error guardando en servidor: ${err.message}`);
+    }
+    
+    setTimeout(() => setBrandSavedMsg(''), 4000);
   };
 
   return (

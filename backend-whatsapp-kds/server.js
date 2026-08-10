@@ -32,6 +32,15 @@ app.use(express.json());
 
 const emitNewOrder = (newOrder) => io.emit('new_order', newOrder);
 
+// Manejo de eventos en tiempo real con Socket.IO
+io.on('connection', (socket) => {
+  // Sincronizar actualización de estado de pedidos entre múltiples pantallas/dispositivos
+  socket.on('update_order_status', (data) => {
+    const { orderId, newStatus } = data;
+    io.emit('order_status_updated', { orderId, newStatus });
+  });
+});
+
 // Configuración de marca en SQLite
 app.get('/api/settings/brand', async (req, res) => {
   try {
@@ -53,6 +62,10 @@ app.post('/api/settings/brand', async (req, res) => {
     }
 
     await setBrandNameInDB(nameToSave);
+    
+    // Notificar a todos los navegadores conectados que la marca cambió
+    io.emit('brand_updated', { brandName: nameToSave });
+
     return res.status(200).json({ status: 'success', brandName: nameToSave, name: nameToSave });
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -73,9 +86,7 @@ app.get('/api/orders/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const order = await getOrderById(id);
-    if (!order) {
-      return res.status(404).json({ error: 'Pedido no encontrado' });
-    }
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
     return res.status(200).json(order);
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -113,7 +124,6 @@ app.post('/api/products', async (req, res) => {
     io.emit('catalog_updated', resultList);
     return res.status(200).json(resultList);
   } catch (error) {
-    console.error('❌ Error al agregar producto:', error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -142,7 +152,7 @@ app.get('/api/reports/daily', async (req, res) => {
   }
 });
 
-// Recepciónd de pedidos (WhatsApp / Manual)
+// Endpoint de WhatsApp e Inserción Manual
 app.post('/api/whatsapp/incoming', async (req, res) => {
   try {
     const { senderName, messageText, manualOrder } = req.body || {};
@@ -203,7 +213,6 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
 
     return res.status(200).json({ status: 'success', order: newOrder, botReply: aiResponse.replyMessage });
   } catch (err) {
-    console.error('❌ Error en Endpoint Entrante:', err);
     return res.status(500).json({ error: err.message });
   }
 });

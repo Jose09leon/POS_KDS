@@ -48,7 +48,8 @@ export async function connectToWhatsApp(onNewOrder) {
     if (!messageText.trim()) return;
 
     const currentCatalog = await getProducts();
-    const currentBrandName = await getBrandName();
+    const rawBrandName = await getBrandName();
+    const currentBrandName = (rawBrandName || 'MI EMPRESA').trim();
     const catalogNames = currentCatalog.map(p => p.name).join(', ');
 
     const aiResponse = await parseWhatsAppOrder(messageText, currentCatalog, currentBrandName);
