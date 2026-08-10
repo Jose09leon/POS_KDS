@@ -1,0 +1,6 @@
+node_modules/
+.env
+backend-whatsapp-kds/auth_info_baileys/
+auth_info_baileys/
+dist/
+build/
