@@ -17,22 +17,43 @@ export default function App() {
     return localStorage.getItem('cf_brand_logo') || '';
   });
 
+  const safeFetch = async (url, options = {}) => {
+    const response = await fetch(url, options);
+    const rawText = await response.text();
+
+    if (!response.ok) {
+      let msg = `Error ${response.status}`;
+      try {
+        const parsed = JSON.parse(rawText);
+        if (parsed.error) msg = parsed.error;
+      } catch (e) {}
+      throw new Error(msg);
+    }
+
+    if (!rawText || rawText.trim() === '') return null;
+
+    try {
+      return JSON.parse(rawText);
+    } catch (e) {
+      return null;
+    }
+  };
+
   const handleSaveBrand = (newName, newLogoBase64) => {
     setBrandName(newName);
     setBrandLogo(newLogoBase64);
     localStorage.setItem('cf_brand_name', newName);
     localStorage.setItem('cf_brand_logo', newLogoBase64);
 
-    fetch('${API_URL}/api/settings/brand', {
+    safeFetch(`${API_URL}/api/settings/brand`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ brandName: newName })
+      body: JSON.stringify({ brandName: newName, name: newName })
     }).catch(err => console.error("Error guardando marca en backend:", err));
   };
 
   useEffect(() => {
-    fetch('${API_URL}/api/products')
-      .then(res => res.json())
+    safeFetch(`${API_URL}/api/products`)
       .then(data => {
         if (Array.isArray(data)) setProducts(data);
       })
@@ -44,11 +65,13 @@ export default function App() {
     const loggedIn = localStorage.getItem('cf_admin_logged') === 'true';
     if (loggedIn) setIsAuthenticated(true);
 
-    const newSocket = io('${API_URL}', {
+    const newSocket = io(API_URL, {
       transports: ['websocket', 'polling']
     });
 
-    newSocket.on('catalog_updated', (updatedCatalog) => setProducts(updatedCatalog));
+    newSocket.on('catalog_updated', (updatedCatalog) => {
+      if (Array.isArray(updatedCatalog)) setProducts(updatedCatalog);
+    });
     newSocket.on('new_order', (incomingOrder) => {
       setOrders((prevOrders) => {
         const updated = [incomingOrder, ...prevOrders];
@@ -91,7 +114,6 @@ export default function App() {
 
   return (
     <div style={{ backgroundColor: '#121212', color: '#ffffff', fontFamily: 'monospace, sans-serif', minHeight: '100vh', padding: '10px', boxSizing: 'border-box' }}>
-      {/* Contenedor principal expandido al 100% de ancho */}
       <div style={{
         backgroundColor: '#000000',
         border: '3px solid #333333',
@@ -231,9 +253,30 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
   const [foundOrder, setFoundOrder] = useState(null);
   const [searchError, setSearchError] = useState('');
 
+  const safeFetch = async (url, options = {}) => {
+    const response = await fetch(url, options);
+    const rawText = await response.text();
+
+    if (!response.ok) {
+      let msg = `Error ${response.status}`;
+      try {
+        const parsed = JSON.parse(rawText);
+        if (parsed.error) msg = parsed.error;
+      } catch (e) {}
+      throw new Error(msg);
+    }
+
+    if (!rawText || rawText.trim() === '') return null;
+
+    try {
+      return JSON.parse(rawText);
+    } catch (e) {
+      return null;
+    }
+  };
+
   const fetchProductsFromDB = () => {
-    fetch('${API_URL}/api/products')
-      .then(res => res.json())
+    safeFetch(`${API_URL}/api/products`)
       .then(data => { if (Array.isArray(data)) onSaveProducts(data); })
       .catch(err => console.error("Error consultando productos:", err));
   };
@@ -243,9 +286,12 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
   const fetchReport = (dateStr) => {
     if (!dateStr) return;
     setIsLoadingReport(true);
-    fetch(`${API_URL}/api/reports/daily?date=${dateStr}`)
-      .then(res => res.json())
-      .then(data => setReportData({ totalSales: data.totalSales || 0, totalOrders: data.totalOrders || 0, orders: data.orders || [] }))
+    safeFetch(`${API_URL}/api/reports/daily?date=${dateStr}`)
+      .then(data => {
+        if (data) {
+          setReportData({ totalSales: data.totalSales || 0, totalOrders: data.totalOrders || 0, orders: data.orders || [] });
+        }
+      })
       .catch(err => setReportData({ totalSales: 0, totalOrders: 0, orders: [] }))
       .finally(() => setIsLoadingReport(false));
   };
@@ -268,12 +314,11 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
     const cleanId = searchOrderId.trim().replace('#', '');
     if (!cleanId) return;
 
-    fetch(`${API_URL}/api/orders/${cleanId}`)
-      .then(res => {
-        if (!res.ok) throw new Error("Pedido no encontrado");
-        return res.json();
+    safeFetch(`${API_URL}/api/orders/${cleanId}`)
+      .then(data => {
+        if (!data) throw new Error("Pedido no encontrado");
+        setFoundOrder(data);
       })
-      .then(data => setFoundOrder(data))
       .catch(err => setSearchError(`❌ No se encontró ningún pedido con el Folio/Orden #${cleanId}`));
   };
 
@@ -305,7 +350,7 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
 
     setIsSending(true);
     try {
-      const res = await fetch('${API_URL}/api/whatsapp/incoming', {
+      await safeFetch(`${API_URL}/api/whatsapp/incoming`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -314,12 +359,11 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
           manualOrder: { customerName: customerName.trim().toUpperCase(), source: orderSource, items: itemsToOrder, total: calculateManualTotal() }
         })
       });
-      if (res.ok) {
-        setOrderSuccessMsg('✅ ¡Pedido enviado con éxito al KDS!');
-        setCustomerName('');
-        setSelectedQuantities({});
-        setTimeout(() => setOrderSuccessMsg(''), 4000);
-      }
+
+      setOrderSuccessMsg('✅ ¡Pedido enviado con éxito al KDS!');
+      setCustomerName('');
+      setSelectedQuantities({});
+      setTimeout(() => setOrderSuccessMsg(''), 4000);
     } catch (error) {
       alert("Error: " + error.message);
     } finally {
@@ -332,21 +376,29 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
     if (!name.trim()) return;
 
     try {
-      const res = await fetch('${API_URL}/api/products', {
+      const updated = await safeFetch(`${API_URL}/api/products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: `p-${Date.now()}`, name: name.trim(), category: category.trim() || 'General', price: parseFloat(price) || 0 })
       });
-      const updated = await res.json();
-      onSaveProducts(updated);
+      
+      if (Array.isArray(updated)) {
+        onSaveProducts(updated);
+      } else {
+        fetchProductsFromDB();
+      }
       setName(''); setCategory(''); setPrice('');
     } catch (err) { alert("Error: " + err.message); }
   };
 
   const handleDeleteProduct = async (id) => {
     try {
-      const res = await fetch(`${API_URL}/api/products/${id}`, { method: 'DELETE' });
-      if (res.ok) onSaveProducts(await res.json());
+      const updated = await safeFetch(`${API_URL}/api/products/${id}`, { method: 'DELETE' });
+      if (Array.isArray(updated)) {
+        onSaveProducts(updated);
+      } else {
+        fetchProductsFromDB();
+      }
     } catch (err) { alert("Error: " + err.message); }
   };
 
@@ -586,9 +638,7 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
   );
 }
 
-// Grid adaptable con soporte para desplazamiento vertical y slots infinitos
 function KDSGrid({ orders, onAdvanceStatus }) {
-  // Asegurar mínimo 8 espacios visibles, o la cantidad real de pedidos si supera los 8
   const totalSlotsCount = Math.max(8, orders.length);
   const slots = Array.from({ length: totalSlotsCount });
 
