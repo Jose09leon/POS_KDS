@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
-const API_URL = 'http://localhost:4000';
+const API_URL = `http://${window.location.hostname}:4000`;
 
 export default function App() {
   const [currentView, setCurrentView] = useState('cold-room');
