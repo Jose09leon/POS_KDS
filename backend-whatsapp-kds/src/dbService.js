@@ -105,7 +105,7 @@ export async function getBrandName() {
 export async function setBrandNameInDB(name) {
   const cleanName = String(name || '').trim();
   db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('brand_name', ?)`, [cleanName]);
-  saveToFile(); // Guarda inmediatamente en el archivo físico pos_kds_system.db
+  saveToFile();
   return cleanName;
 }
 

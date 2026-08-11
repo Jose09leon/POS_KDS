@@ -42,8 +42,17 @@ export default function App() {
   const handleSaveBrand = (newName, newLogoBase64) => {
     setBrandName(newName);
     setBrandLogo(newLogoBase64);
-    localStorage.setItem('cf_brand_name', newName);
-    localStorage.setItem('cf_brand_logo', newLogoBase64);
+
+    try {
+      localStorage.setItem('cf_brand_name', newName);
+      if (newLogoBase64) {
+        localStorage.setItem('cf_brand_logo', newLogoBase64);
+      } else {
+        localStorage.removeItem('cf_brand_logo');
+      }
+    } catch (e) {
+      console.warn("No se pudo guardar el logo en localStorage por exceder la cuota, pero se mantendrá activo en esta sesión.");
+    }
   };
 
   useEffect(() => {
@@ -650,7 +659,7 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
           <h3 style={{ color: '#00e5ff', marginTop: 0, marginBottom: '15px' }}>⚙️ Personalización de Nombre y Logotipo</h3>
           
           {brandSavedMsg && (
-            <div style={{ backgroundColor: '#00c853', color: '#000', padding: '12px', fontWeight: 'bold', marginBottom: '15px', borderRadius: '4px', textAlign: 'center' }}>
+            <div style={{ backgroundColor: brandSavedMsg.startsWith('✅') ? '#00c853' : '#d32f2f', color: '#000', padding: '12px', fontWeight: 'bold', marginBottom: '15px', borderRadius: '4px', textAlign: 'center' }}>
               {brandSavedMsg}
             </div>
           )}
