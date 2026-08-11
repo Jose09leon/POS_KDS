@@ -44,16 +44,9 @@ export default function App() {
     setBrandLogo(newLogoBase64);
     localStorage.setItem('cf_brand_name', newName);
     localStorage.setItem('cf_brand_logo', newLogoBase64);
-
-    safeFetch(`${API_URL}/api/settings/brand`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ brandName: newName, name: newName })
-    }).catch(err => console.error("Error guardando marca en backend:", err));
   };
 
   useEffect(() => {
-    // 1. Cargar la marca directamente desde SQLite al cargar cualquier navegador
     safeFetch(`${API_URL}/api/settings/brand`)
       .then(data => {
         if (data && (data.brandName || data.name)) {
@@ -79,12 +72,10 @@ export default function App() {
       transports: ['websocket', 'polling']
     });
 
-    // 2. Escuchar actualización de marca en tiempo real desde otro dispositivo
     newSocket.on('brand_updated', (data) => {
       if (data && data.brandName) setBrandName(data.brandName);
     });
 
-    // 3. Escuchar cambios de estado en tiempo real transmitidos por otros navegadores
     newSocket.on('order_status_updated', ({ orderId, newStatus }) => {
       setOrders((prevOrders) => {
         let updated;
@@ -135,7 +126,6 @@ export default function App() {
     }
 
     if (nextStatus && socketInstance) {
-      // Emite el evento a Socket.IO para sincronizar todas las pantallas conectadas
       socketInstance.emit('update_order_status', {
         orderId: orderToAdvance.id,
         newStatus: nextStatus
@@ -452,15 +442,19 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
     e.preventDefault();
     const finalName = inputBrandName.trim() || 'MI EMPRESA';
     
-    onSaveBrand(finalName, logoPreview);
-
     try {
-      await safeFetch(`${API_URL}/api/settings/brand`, {
+      const response = await safeFetch(`${API_URL}/api/settings/brand`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ brandName: finalName, name: finalName })
       });
-      setBrandSavedMsg('✅ Identidad guardada en SQLite con éxito.');
+
+      if (response && response.status === 'success') {
+        onSaveBrand(finalName, logoPreview);
+        setBrandSavedMsg('✅ Identidad guardada en SQLite con éxito.');
+      } else {
+        setBrandSavedMsg('❌ No se pudo confirmar el guardado en el servidor.');
+      }
     } catch (err) {
       setBrandSavedMsg(`❌ Error guardando en servidor: ${err.message}`);
     }
@@ -655,7 +649,11 @@ function AdminDashboardView({ products, onSaveProducts, brandName, brandLogo, on
         <div style={{ backgroundColor: '#1e1e1e', padding: '20px', border: '1px solid #333', maxWidth: '600px' }}>
           <h3 style={{ color: '#00e5ff', marginTop: 0, marginBottom: '15px' }}>⚙️ Personalización de Nombre y Logotipo</h3>
           
-          {brandSavedMsg && <div style={{ backgroundColor: '#00c853', color: '#000', padding: '8px', fontWeight: 'bold', marginBottom: '15px' }}>{brandSavedMsg}</div>}
+          {brandSavedMsg && (
+            <div style={{ backgroundColor: '#00c853', color: '#000', padding: '12px', fontWeight: 'bold', marginBottom: '15px', borderRadius: '4px', textAlign: 'center' }}>
+              {brandSavedMsg}
+            </div>
+          )}
 
           <form onSubmit={handleSaveBrandSettings} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             <div>

@@ -61,8 +61,12 @@ export async function connectToWhatsApp(onNewOrder) {
 
     const currentCatalog = await getProducts();
     const rawBrandName = await getBrandName();
-    const currentBrandName = (rawBrandName && rawBrandName.trim() !== '') ? rawBrandName.trim() : 'MI EMPRESA';
-    const catalogNames = currentCatalog.map(p => p.name).join(', ');
+    
+    const currentBrandName = (rawBrandName && String(rawBrandName).trim() !== '') 
+      ? String(rawBrandName).trim() 
+      : 'MI EMPRESA';
+      
+    const catalogNames = currentCatalog.map(p => `• ${p.name} ($${p.price.toFixed(2)} MXN)`).join('\n');
 
     const aiResponse = await parseWhatsAppOrder(messageText, currentCatalog, currentBrandName);
 
@@ -100,23 +104,21 @@ export async function connectToWhatsApp(onNewOrder) {
 
       const itemsText = itemsWithPrices.map(i => `• ${i.qty}x ${i.name} - $${i.subtotal.toFixed(2)}`).join('\n');
       
-      let replyMsg = `🛒 *${currentBrandName.toUpperCase()}*\n\n¡Hola ${senderName}! Tu pedido ha sido recibido:\n\n${itemsText}\n\n*TOTAL A PAGAR:* $${orderTotal.toFixed(2)} MXN\n*Folio de Pedido:* #${newOrder.id}\n\n¡Estamos preparando tu pedido!`;
-
-      replyMsg = replyMsg.replace(/POS_KDS/gi, currentBrandName.toUpperCase());
+      const replyMsg = `🛒 *${currentBrandName.toUpperCase()}*\n\n¡Hola ${senderName}! Tu pedido ha sido recibido:\n\n${itemsText}\n\n*TOTAL A PAGAR:* $${orderTotal.toFixed(2)} MXN\n*Folio de Pedido:* #${newOrder.id}\n\n¡Estamos preparando tu pedido!`;
 
       await sock.sendMessage(senderJid, { text: replyMsg, linkPreview: null });
 
     } else {
-      let fallbackText = aiResponse?.replyMessage;
+      let customWelcome = `Hola ${senderName}, en *${currentBrandName.toUpperCase()}* estamos para ayudarte.\n\nContamos con la siguiente variedad de productos:\n${catalogNames || 'Por el momento no hay productos registrados.'}\n\n¿En qué podemos asistirte hoy?`;
 
-      if (!fallbackText) {
-        fallbackText = `¡Hola ${senderName}! Gracias por escribir a *${currentBrandName.toUpperCase()}*. 🛒\n\nPor el momento contamos con los siguientes productos:\n${catalogNames}\n\n¿Te gustaría realizar un pedido con alguno de ellos?`;
-      } else {
-        fallbackText = fallbackText.replace(/POS_KDS/gi, currentBrandName.toUpperCase())
-                                   .replace(/MI EMPRESA/gi, currentBrandName.toUpperCase());
+      if (aiResponse && aiResponse.replyMessage && !aiResponse.replyMessage.includes('POS_KDS')) {
+        customWelcome = aiResponse.replyMessage;
       }
 
-      await sock.sendMessage(senderJid, { text: fallbackText, linkPreview: null });
+      customWelcome = customWelcome.replace(/POS_KDS/gi, currentBrandName.toUpperCase())
+                                   .replace(/MI EMPRESA/gi, currentBrandName.toUpperCase());
+
+      await sock.sendMessage(senderJid, { text: customWelcome, linkPreview: null });
     }
   });
 }

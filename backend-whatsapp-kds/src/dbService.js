@@ -75,9 +75,6 @@ export async function initDB() {
   console.log('🗄️ Base de datos SQLite (WebAssembly/JS) conectada correctamente');
 }
 
-// -------------------------------------------------------------
-// FUNCIÓN NUEVA: Genera el número de folio consecutivo
-// -------------------------------------------------------------
 export async function getNextOrderId() {
   try {
     const res = db.exec(`SELECT id FROM orders`);
@@ -94,7 +91,7 @@ export async function getNextOrderId() {
   } catch (e) {
     console.error("Error al obtener el número consecutivo de orden:", e);
   }
-  return "1001"; // Valor por defecto si no existen pedidos aún
+  return "1001";
 }
 
 export async function getBrandName() {
@@ -106,9 +103,10 @@ export async function getBrandName() {
 }
 
 export async function setBrandNameInDB(name) {
-  db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('brand_name', ?)`, [name]);
-  saveToFile();
-  return name;
+  const cleanName = String(name || '').trim();
+  db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('brand_name', ?)`, [cleanName]);
+  saveToFile(); // Guarda inmediatamente en el archivo físico pos_kds_system.db
+  return cleanName;
 }
 
 export async function getProducts() {
