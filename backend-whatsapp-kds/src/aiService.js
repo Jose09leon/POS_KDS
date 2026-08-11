@@ -29,18 +29,20 @@ function normalizeProductName(rawName, catalog) {
   return match ? match.name : null;
 }
 
-export async function parseWhatsAppOrder(messageText, catalog, brandName = 'el negocio') {
-  const catalogList = catalog.map(p => `- ${p.name} ($${p.price})`).join('\n');
+export async function parseWhatsAppOrder(messageText, catalog = [], brandName = 'MI EMPRESA') {
+  const cleanBrand = (brandName && brandName.trim() !== '') ? brandName.trim() : 'MI EMPRESA';
+  const catalogList = catalog.map(p => `- ${p.name} ($${p.price} MXN)`).join('\n');
 
   const systemPrompt = `
-Eres un asistente extractor de pedidos para el negocio '${brandName}'.
+Eres un asistente extractor de pedidos para la empresa '${cleanBrand}'.
 Coteja el mensaje del cliente con este catálogo exacto:
-${catalogList}
+${catalogList || 'Sin productos disponibles.'}
 
-REGLAS STRICTAS:
+REGLAS ESTRICTAS:
 1. Extrae únicamente los productos que pertenezcan al catálogo listado arriba.
-2. Si el producto solicitado NO existe en el catálogo, marca "isValidOrder": false y en "replyMessage" explica educadamente que no cuentan con ese producto y menciona los productos disponibles.
-3. Si el mensaje es solo un saludo o duda general, marca "isValidOrder": false y responde cordialmente ofreciendo ayuda.
+2. Si el producto solicitado NO existe en el catálogo, marca "isValidOrder": false y en "replyMessage" explica educadamente que no cuentan con ese producto a nombre de '${cleanBrand}' y menciona los disponibles.
+3. Si el mensaje es solo un saludo o duda general, marca "isValidOrder": false y responde cordialmente ofreciendo ayuda a nombre de '${cleanBrand}'.
+4. JAMÁS uses la palabra "POS_KDS", "el negocio", ni incluyas URLs o enlaces en "replyMessage". Usa siempre el nombre exacto '${cleanBrand}'.
 
 Devuelve ÚNICAMENTE un JSON con esta estructura exacta:
 {
@@ -49,7 +51,7 @@ Devuelve ÚNICAMENTE un JSON con esta estructura exacta:
   "items": [
     { "name": "Nombre EXACTO del catálogo", "qty": 1 }
   ],
-  "replyMessage": "Mensaje de respuesta o confirmación"
+  "replyMessage": "Mensaje de respuesta o confirmación a nombre de ${cleanBrand}"
 }
 `;
 
@@ -83,7 +85,7 @@ Devuelve ÚNICAMENTE un JSON con esta estructura exacta:
       if (validItems.length === 0) {
         result.isValidOrder = false;
         const availableProds = catalog.map(p => p.name).join(', ');
-        result.replyMessage = `Lo sentimos, no pudimos identificar los productos. Contamos con: ${availableProds}.`;
+        result.replyMessage = `¡Hola! Gracias por escribir a *${cleanBrand.toUpperCase()}*. No pudimos identificar los productos. Por el momento contamos con: ${availableProds}.`;
       } else {
         result.items = validItems;
       }
@@ -94,7 +96,7 @@ Devuelve ÚNICAMENTE un JSON con esta estructura exacta:
     console.error('Error en Groq IA:', error.message);
     return { 
       isValidOrder: false, 
-      replyMessage: "No pude procesar el mensaje en este momento. Por favor reintenta tu pedido." 
+      replyMessage: `¡Hola! Gracias por comunicarte con *${cleanBrand.toUpperCase()}*. En este momento no pudimos procesar tu solicitud, por favor reintenta tu pedido.` 
     };
   }
 }
