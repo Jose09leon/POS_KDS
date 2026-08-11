@@ -30,7 +30,6 @@ export async function connectToWhatsApp(onNewOrder) {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-      // Si la sesión fue desvinculada/cerrada desde el teléfono (código 401 / loggedOut)
       if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
         console.log('⚠️ Sesión desvinculada desde el teléfono. Limpiando credenciales revocadas...');
         try {
@@ -62,7 +61,7 @@ export async function connectToWhatsApp(onNewOrder) {
 
     const currentCatalog = await getProducts();
     const rawBrandName = await getBrandName();
-    const currentBrandName = (rawBrandName || 'MI EMPRESA').trim();
+    const currentBrandName = (rawBrandName && rawBrandName.trim() !== '') ? rawBrandName.trim() : 'MI EMPRESA';
     const catalogNames = currentCatalog.map(p => p.name).join(', ');
 
     const aiResponse = await parseWhatsAppOrder(messageText, currentCatalog, currentBrandName);
@@ -84,7 +83,6 @@ export async function connectToWhatsApp(onNewOrder) {
         };
       });
 
-      // Obtener el número consecutivo directamente desde la base de datos SQLite
       const nextId = await getNextOrderId();
 
       const newOrder = {
@@ -101,7 +99,12 @@ export async function connectToWhatsApp(onNewOrder) {
       onNewOrder(newOrder);
 
       const itemsText = itemsWithPrices.map(i => `• ${i.qty}x ${i.name} - $${i.subtotal.toFixed(2)}`).join('\n');
-      const replyMsg = `🛒 *${currentBrandName.toUpperCase()}*\n\n¡Hola ${senderName}! Tu pedido ha sido recibido:\n\n${itemsText}\n\n*TOTAL A PAGAR:* $${orderTotal.toFixed(2)} MXN\n*Folio de Pedido:* #${newOrder.id}\n\n¡Estamos preparando tu pedido!`;
+      
+      // Construir el encabezado usando siempre la marca de SQLite
+      let replyMsg = `🛒 *${currentBrandName.toUpperCase()}*\n\n¡Hola ${senderName}! Tu pedido ha sido recibido:\n\n${itemsText}\n\n*TOTAL A PAGAR:* $${orderTotal.toFixed(2)} MXN\n*Folio de Pedido:* #${newOrder.id}\n\n¡Estamos preparando tu pedido!`;
+
+      // Reemplazo preventivo por si venía de la IA
+      replyMsg = replyMsg.replace(/POS_KDS/gi, currentBrandName.toUpperCase());
 
       await sock.sendMessage(senderJid, { text: replyMsg });
 
@@ -109,7 +112,11 @@ export async function connectToWhatsApp(onNewOrder) {
       let fallbackText = aiResponse?.replyMessage;
 
       if (!fallbackText) {
-        fallbackText = `¡Hola ${senderName}! Gracias por escribir a *${currentBrandName}*. 🛒\n\nPor el momento contamos con los siguientes productos:\n${catalogNames}\n\n¿Te gustaría realizar un pedido con alguno de ellos?`;
+        fallbackText = `¡Hola ${senderName}! Gracias por escribir a *${currentBrandName.toUpperCase()}*. 🛒\n\nPor el momento contamos con los siguientes productos:\n${catalogNames}\n\n¿Te gustaría realizar un pedido con alguno de ellos?`;
+      } else {
+        // Reemplazar obligatoriamente marcas fijas enviadas por la respuesta de la IA
+        fallbackText = fallbackText.replace(/POS_KDS/gi, currentBrandName.toUpperCase())
+                                   .replace(/MI EMPRESA/gi, currentBrandName.toUpperCase());
       }
 
       await sock.sendMessage(senderJid, { text: fallbackText });
