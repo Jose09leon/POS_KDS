@@ -1,7 +1,8 @@
 import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
+import fs from 'fs';
 import { parseWhatsAppOrder } from './aiService.js';
-import { saveOrder, getProducts, getBrandName } from './dbService.js';
+import { saveOrder, getProducts, getBrandName, getNextOrderId } from './dbService.js';
 
 export async function connectToWhatsApp(onNewOrder) {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -29,9 +30,21 @@ export async function connectToWhatsApp(onNewOrder) {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-      if (shouldReconnect) {
-        setTimeout(() => connectToWhatsApp(onNewOrder), 3000);
+      // Si la sesión fue desvinculada/cerrada desde el teléfono (código 401 / loggedOut)
+      if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+        console.log('⚠️ Sesión desvinculada desde el teléfono. Limpiando credenciales revocadas...');
+        try {
+          if (fs.existsSync('auth_info_baileys')) {
+            fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+          }
+        } catch (err) {
+          console.error("Error al borrar la carpeta de sesión:", err);
+        }
       }
+
+      console.log('🔄 Reintentando conexión con WhatsApp...');
+      setTimeout(() => connectToWhatsApp(onNewOrder), 3000);
+
     } else if (connection === 'open') {
       console.log('✅ ¡WhatsApp vinculado y conectado exitosamente!');
     }
@@ -71,8 +84,11 @@ export async function connectToWhatsApp(onNewOrder) {
         };
       });
 
+      // Obtener el número consecutivo directamente desde la base de datos SQLite
+      const nextId = await getNextOrderId();
+
       const newOrder = {
-        id: `${Math.floor(1000 + Math.random() * 9000)}`,
+        id: nextId,
         customerName: senderName.toUpperCase(),
         source: 'WhatsApp IA',
         minutes: '0:01',

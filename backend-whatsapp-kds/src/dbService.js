@@ -75,6 +75,28 @@ export async function initDB() {
   console.log('🗄️ Base de datos SQLite (WebAssembly/JS) conectada correctamente');
 }
 
+// -------------------------------------------------------------
+// FUNCIÓN NUEVA: Genera el número de folio consecutivo
+// -------------------------------------------------------------
+export async function getNextOrderId() {
+  try {
+    const res = db.exec(`SELECT id FROM orders`);
+    if (res.length > 0 && res[0].values.length > 0) {
+      const ids = res[0].values
+        .map(row => parseInt(row[0], 10))
+        .filter(num => !isNaN(num));
+      
+      if (ids.length > 0) {
+        const maxId = Math.max(...ids);
+        return String(maxId + 1);
+      }
+    }
+  } catch (e) {
+    console.error("Error al obtener el número consecutivo de orden:", e);
+  }
+  return "1001"; // Valor por defecto si no existen pedidos aún
+}
+
 export async function getBrandName() {
   const res = db.exec(`SELECT value FROM settings WHERE key = 'brand_name'`);
   if (res.length > 0 && res[0].values.length > 0) {
@@ -140,24 +162,25 @@ export async function getOrderById(orderId) {
   if (!orderId) return null;
   const cleanId = String(orderId).trim().replace('#', '');
 
-  const resOrder = db.exec(`SELECT * FROM orders WHERE TRIM(id) = TRIM('${cleanId}')`);
-  if (resOrder.length === 0 || resOrder[0].values.length === 0) return null;
-
-  const cols = resOrder[0].columns;
-  const row = resOrder[0].values[0];
-  const order = {};
-  cols.forEach((col, idx) => order[col] = row[idx]);
-
-  const resItems = db.exec(`SELECT product_name as name, quantity as qty, unit_price as unitPrice, subtotal FROM order_items WHERE order_id = '${order.id}'`);
-  let items = [];
-  if (resItems.length > 0) {
-    const itemCols = resItems[0].columns;
-    items = resItems[0].values.map(r => {
-      const it = {};
-      itemCols.forEach((col, idx) => it[col] = r[idx]);
-      return it;
-    });
+  const stmtOrder = db.prepare(`SELECT * FROM orders WHERE TRIM(id) = TRIM(?)`);
+  stmtOrder.bind([cleanId]);
+  
+  if (!stmtOrder.step()) {
+    stmtOrder.free();
+    return null;
   }
+
+  const order = stmtOrder.getAsObject();
+  stmtOrder.free();
+
+  const stmtItems = db.prepare(`SELECT product_name as name, quantity as qty, unit_price as unitPrice, subtotal FROM order_items WHERE order_id = ?`);
+  stmtItems.bind([order.id]);
+
+  let items = [];
+  while (stmtItems.step()) {
+    items.push(stmtItems.getAsObject());
+  }
+  stmtItems.free();
 
   return { ...order, items };
 }
@@ -174,24 +197,26 @@ export async function getAllOrdersFromDB() {
 }
 
 export async function getSalesReportByDate(dateStr) {
-  const resOrders = db.exec(`SELECT * FROM orders WHERE SUBSTR(created_at, 1, 10) = '${dateStr}' ORDER BY created_at DESC`);
-  let orders = [];
-  if (resOrders.length > 0) {
-    const cols = resOrders[0].columns;
-    orders = resOrders[0].values.map(row => {
-      const obj = {};
-      cols.forEach((col, idx) => obj[col] = row[idx]);
-      return obj;
-    });
-  }
+  const stmtOrders = db.prepare(`SELECT * FROM orders WHERE SUBSTR(created_at, 1, 10) = ? ORDER BY created_at DESC`);
+  stmtOrders.bind([dateStr]);
 
-  const resSum = db.exec(`SELECT COUNT(*) as totalOrders, COALESCE(SUM(total), 0) as totalSales FROM orders WHERE SUBSTR(created_at, 1, 10) = '${dateStr}'`);
+  let orders = [];
+  while (stmtOrders.step()) {
+    orders.push(stmtOrders.getAsObject());
+  }
+  stmtOrders.free();
+
+  const stmtSum = db.prepare(`SELECT COUNT(*) as totalOrders, COALESCE(SUM(total), 0) as totalSales FROM orders WHERE SUBSTR(created_at, 1, 10) = ?`);
+  stmtSum.bind([dateStr]);
+
   let totalOrders = 0;
   let totalSales = 0;
-  if (resSum.length > 0 && resSum[0].values.length > 0) {
-    totalOrders = resSum[0].values[0][0];
-    totalSales = resSum[0].values[0][1];
+  if (stmtSum.step()) {
+    const resObj = stmtSum.getAsObject();
+    totalOrders = resObj.totalOrders;
+    totalSales = resObj.totalSales;
   }
+  stmtSum.free();
 
   return {
     date: dateStr,

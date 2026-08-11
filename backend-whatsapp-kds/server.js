@@ -15,7 +15,8 @@ import {
   getOrderById, 
   getAllOrdersFromDB, 
   setBrandNameInDB, 
-  getBrandName 
+  getBrandName,
+  getNextOrderId 
 } from './src/dbService.js';
 
 dotenv.config();
@@ -34,7 +35,6 @@ const emitNewOrder = (newOrder) => io.emit('new_order', newOrder);
 
 // Manejo de eventos en tiempo real con Socket.IO
 io.on('connection', (socket) => {
-  // Sincronizar actualización de estado de pedidos entre múltiples pantallas/dispositivos
   socket.on('update_order_status', (data) => {
     const { orderId, newStatus } = data;
     io.emit('order_status_updated', { orderId, newStatus });
@@ -62,8 +62,6 @@ app.post('/api/settings/brand', async (req, res) => {
     }
 
     await setBrandNameInDB(nameToSave);
-    
-    // Notificar a todos los navegadores conectados que la marca cambió
     io.emit('brand_updated', { brandName: nameToSave });
 
     return res.status(200).json({ status: 'success', brandName: nameToSave, name: nameToSave });
@@ -152,14 +150,17 @@ app.get('/api/reports/daily', async (req, res) => {
   }
 });
 
-// Endpoint de WhatsApp e Inserción Manual
+// Endpoint de recepción para pedidos manuales / WhatsApp
 app.post('/api/whatsapp/incoming', async (req, res) => {
   try {
     const { senderName, messageText, manualOrder } = req.body || {};
 
     if (manualOrder) {
+      // 👈 AQUÍ SE GENERA EL ID CONSECUTIVO DESDE LA DB EN LUGAR DE RANDÓMICO
+      const nextId = await getNextOrderId();
+
       const newOrder = {
-        id: `${Math.floor(1000 + Math.random() * 9000)}`,
+        id: nextId,
         customerName: manualOrder.customerName || 'CLIENTE MOSTRADOR',
         source: manualOrder.source || 'Llamada',
         minutes: '0:01',
@@ -198,8 +199,10 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
       };
     });
 
+    const nextId = await getNextOrderId();
+
     const newOrder = {
-      id: `${Math.floor(1000 + Math.random() * 9000)}`,
+      id: nextId,
       customerName: (senderName || aiResponse.customerName || 'CLIENTE').toUpperCase(),
       source: 'WhatsApp IA',
       minutes: '0:01',
