@@ -45,7 +45,7 @@ io.on('connection', (socket) => {
 app.get('/api/settings/brand', async (req, res) => {
   try {
     const brandName = await getBrandName();
-    const finalBrand = brandName || 'MI EMPRESA';
+    const finalBrand = (brandName && brandName.trim() !== '') ? brandName.trim() : 'MI EMPRESA';
     return res.status(200).json({ brandName: finalBrand, name: finalBrand });
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -55,7 +55,7 @@ app.get('/api/settings/brand', async (req, res) => {
 app.post('/api/settings/brand', async (req, res) => {
   try {
     const { brandName, name } = req.body;
-    const nameToSave = brandName || name;
+    const nameToSave = (brandName || name || '').trim();
 
     if (!nameToSave) {
       return res.status(400).json({ error: 'Nombre de marca requerido' });
@@ -66,6 +66,7 @@ app.post('/api/settings/brand', async (req, res) => {
 
     return res.status(200).json({ status: 'success', brandName: nameToSave, name: nameToSave });
   } catch (error) {
+    console.error("Error al guardar marca:", error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -156,7 +157,6 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     const { senderName, messageText, manualOrder } = req.body || {};
 
     if (manualOrder) {
-      // 👈 AQUÍ SE GENERA EL ID CONSECUTIVO DESDE LA DB EN LUGAR DE RANDÓMICO
       const nextId = await getNextOrderId();
 
       const newOrder = {
